@@ -1,0 +1,9 @@
+# Kinect v2 USB devices (the same product IDs recognized by libfreenect2).
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02c4", GROUP="video", MODE="0660"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02d8", GROUP="video", MODE="0660"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02d9", GROUP="video", MODE="0660"
+
+# Fixed labels also work when --video-nr uses different device numbers.
+SUBSYSTEM=="video4linux", ATTR{name}=="KinectRGB", GROUP="video", MODE="0660", SYMLINK+="kinect-rgb"
+SUBSYSTEM=="video4linux", ATTR{name}=="KinectIR", GROUP="video", MODE="0660", SYMLINK+="kinect-ir"
+SUBSYSTEM=="video4linux", ATTR{name}=="KinectDepth", GROUP="video", MODE="0660", SYMLINK+="kinect-depth"

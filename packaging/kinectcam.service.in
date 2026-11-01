@@ -1,0 +1,25 @@
+[Unit]
+Description=Kinect v2 RGB, infrared and depth V4L2 bridge
+After=systemd-udevd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+DynamicUser=yes
+SupplementaryGroups=video
+Environment="KINECTCAM_ARGS=--pipeline cpu --ir-format yuyv"
+EnvironmentFile=-@CMAKE_INSTALL_FULL_SYSCONFDIR@/kinectcam.conf
+ExecStartPre=+@CMAKE_INSTALL_FULL_LIBEXECDIR@/kinectcam/setup-loopback.sh
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/kinectcam $KINECTCAM_ARGS
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

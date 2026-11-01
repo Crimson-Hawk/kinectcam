@@ -1,0 +1,80 @@
+name: Push to AUR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install checkout runtime
+        run: pacman -Syu --noconfirm --needed git nodejs
+      - name: Checkout source
+        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and test the x86_64 Arch package
+        shell: bash
+        run: bash scripts/ci-arch-build.sh "$PWD"
+
+  publish:
+    needs: validate
+    if: ${{ github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest-arm64
+    container:
+      image: node:24-bookworm
+    steps:
+      - name: Install publishing tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git openssh-client makepkg pacman-package-manager curl ca-certificates
+      - name: Checkout validated source
+        uses: https://github.com/actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned Gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            aarch64|arm64)
+              asset=gitleaks_8.30.1_linux_arm64.tar.gz
+              checksum=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080 ;;
+            x86_64)
+              asset=gitleaks_8.30.1_linux_x64.tar.gz
+              checksum=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb ;;
+            *) echo 'Unsupported Gitleaks architecture' >&2; exit 1 ;;
+          esac
+          curl --fail --location --retry 3 "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/$asset" -o /tmp/gitleaks.tar.gz
+          printf '%s  %s\n' "$checksum" /tmp/gitleaks.tar.gz | sha256sum --check --status
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+      - name: Scan source and history
+        shell: bash
+        run: |
+          gitleaks git . --redact --exit-code 1
+          gitleaks dir . --redact --exit-code 1
+      - name: Prepare versioned AUR metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -o node -g node /tmp/aur-metadata /tmp/version-source
+          ln -s "$PWD" /tmp/version-source/kinectcam
+          version=$(bash -c 'source packaging/aur/PKGBUILD; srcdir=/tmp/version-source; pkgver')
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO /tmp/aur-metadata/
+          chown node:node /tmp/aur-metadata/PKGBUILD /tmp/aur-metadata/.SRCINFO
+          runuser -u node -- bash -c 'set -euo pipefail; cd /tmp/aur-metadata; makepkg --printsrcinfo > generated.SRCINFO; diff -u .SRCINFO generated.SRCINFO'
+          sed -i "s/^pkgver=.*/pkgver=$version/" /tmp/aur-metadata/PKGBUILD
+          runuser -u node -- bash -c 'set -euo pipefail; cd /tmp/aur-metadata; makepkg --printsrcinfo > .SRCINFO'
+          rm /tmp/aur-metadata/generated.SRCINFO
+          gitleaks dir /tmp/aur-metadata --redact --exit-code 1
+      - name: Publish metadata to AUR
+        shell: bash
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          AUR_REPO_URL: ${{ secrets.AUR_REPO_URL }}
+        run: bash scripts/publish-aur.sh /tmp/aur-metadata
