@@ -156,9 +156,40 @@ sudo systemctl restart kinectcam
 ```
 
 `--ir-gain 4 --ir-gamma 1` is the default. Gain multiplies intensity; gamma above
-1 brightens shadows. Avoid washing out facial detail. The service continuously
-captures while running; add `--no-rgb --no-depth` to its arguments for IR-only
-use. IR capture still uses the Kinect's shared IR/depth hardware pipeline.
+1 brightens shadows. Avoid washing out facial detail. The service uses on-demand
+capture; add `--no-rgb --no-depth` to its arguments for IR-only use. IR capture
+still uses the Kinect's shared IR/depth hardware pipeline.
+
+## On-demand operation
+
+The installed service defaults to `--on-demand`. The virtual camera devices stay
+available, but the Kinect's USB capture sessions start only when an application
+begins streaming from an enabled output. Enumerating cameras or opening a device
+only to inspect its format does not wake the sensor.
+
+One second after the last capture client leaves, the bridge stops and closes
+the physical sensor. It clears queued images to black; depth is zero/invalid.
+The adapter remains electrically powered. While a client is active, all configured
+streams run together. IR and depth are part of the same sensor pipeline.
+
+```sh
+kinectcam --on-demand --ir-format yuyv
+kinectcam --on-demand --idle-timeout-ms 0 --no-rgb --no-depth --ir-format yuyv
+```
+
+`--idle-timeout-ms` accepts 0–60000; default 1000 avoids repeated restarts during
+short client gaps. Omit `--on-demand` for continuous CLI capture/diagnostics.
+If `/etc/kinectcam.conf` already overrides `KINECTCAM_ARGS`, add `--on-demand`
+there too: the configuration file takes precedence over service defaults.
+
+Wake-up can take several seconds. Clients may receive blank frames while the
+sensor starts. For Howdy, increase `[video] timeout` (for example, to 10 seconds)
+if its normal authentication window expires before usable frames arrive.
+Changing that setting is separate from this bridge; no PAM settings are edited.
+
+On-demand requires v4l2loopback's client-usage event API (tested with 0.15.4).
+An unsupported API produces a clear error instead of silently leaving the camera
+capturing continuously. The service process stays running while the sensor idles.
 
 Do not use `--test-pattern` on a device configured for authentication. Access to
 write the loopback is access to supply its images; the `video` group is trusted

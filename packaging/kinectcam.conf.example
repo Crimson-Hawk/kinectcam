@@ -1,6 +1,7 @@
 # Optional /etc/kinectcam.conf when installed with CMAKE_INSTALL_PREFIX=/usr.
 # YUYV IR is grayscale imagery packed for broad OpenCV/Howdy compatibility.
-KINECTCAM_ARGS="--pipeline cpu --ir-format yuyv --ir-gain 4 --ir-gamma 1"
+KINECTCAM_ARGS="--pipeline cpu --ir-format yuyv --ir-gain 4 --ir-gamma 1 --on-demand"
 # IR-only mode: add --no-rgb --no-depth to the line above.
-# This service continuously captures while running. Do not use --test-pattern
-# for a camera configured as an authentication source.
+# Streams stop 1000ms after the last capture client leaves; set
+# --idle-timeout-ms 0 for immediate shutdown. Remove --on-demand for diagnostics.
+# Do not use --test-pattern for a camera configured as an authentication source.

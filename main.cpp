@@ -1,6 +1,7 @@
 #include "options.hpp"
 #include "pixels.hpp"
 #include "v4l2_output.hpp"
+#include "demand.hpp"
 #include <libfreenect2/libfreenect2.hpp>
 #include <libfreenect2/frame_listener_impl.h>
 #include <libfreenect2/packet_pipeline.h>
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <functional>
 
 namespace {
 volatile std::sig_atomic_t running = 1;
@@ -105,6 +107,21 @@ public:
             depth_->write_frame(depth_buffer_);
         }
     }
+    void monitor_clients() {
+        for (auto* output : {rgb_.get(),ir_.get(),depth_.get()})
+            if (output) output->enable_client_monitoring();
+        blank(); // Activate loopback producers without activating the Kinect.
+    }
+    bool has_clients() {
+        bool result=false;
+        for (auto* output : {rgb_.get(),ir_.get(),depth_.get()})
+            if (output) result=output->has_capture_clients() || result;
+        return result;
+    }
+    void blank() {
+        for (auto* output : {rgb_.get(),ir_.get(),depth_.get()})
+            if (output) output->write_blank();
+    }
 private:
     const kinectcam::Options& options_;
     std::unique_ptr<kinectcam::V4L2Output> rgb_, ir_, depth_;
@@ -114,10 +131,21 @@ private:
 void test_pattern(const kinectcam::Options& o) {
     std::cerr << "SYNTHETIC TEST PATTERN: these frames are not from a Kinect.\n";
     Outputs outputs(o);
+    if (o.on_demand) outputs.monitor_clients();
+    kinectcam::DemandState demand(std::chrono::milliseconds(o.idle_timeout_ms));
+    bool active=false;
     std::vector<unsigned char> rgb(o.rgb ? color_pixels*4 : 0);
     std::vector<float> ir(o.ir ? ir_pixels : 0), depth(o.depth ? ir_pixels : 0);
     auto next = std::chrono::steady_clock::now();
-    for (std::uint64_t frame = 0; running && (!o.frames || frame < o.frames); ++frame) {
+    std::uint64_t frame=0;
+    while (running && (!o.frames || frame < o.frames)) {
+        if (o.on_demand && !demand.wants_capture(outputs.has_clients(),std::chrono::steady_clock::now())) {
+            if (active) { outputs.blank(); active=false; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            next=std::chrono::steady_clock::now();
+            continue;
+        }
+        active=true;
         if (o.rgb) {
             for (std::size_t y = 0; y < 1080; ++y)
                 for (std::size_t x = 0; x < 1920; ++x) {
@@ -132,18 +160,17 @@ void test_pattern(const kinectcam::Options& o) {
             if (o.depth) depth[i] = 500.0f + static_cast<float>((i%512)*8);
         }
         outputs.publish(rgb.data(),false,ir.data(),depth.data());
+        ++frame;
         next += std::chrono::nanoseconds(1000000000/30);
         std::this_thread::sleep_until(next);
     }
+    if (o.on_demand) outputs.blank();
 }
 
-int capture(const kinectcam::Options& o) {
+void stream_session(const kinectcam::Options& o, Outputs& outputs, std::uint64_t& frames_sent,
+                    const std::function<bool()>& wanted) {
     libfreenect2::Freenect2 context;
     const int count = context.enumerateDevices();
-    if (o.list) {
-        for (int i = 0; i < count; ++i) std::cout << context.getDeviceSerialNumber(i) << '\n';
-        return 0;
-    }
     if (count == 0) throw std::runtime_error("No Kinect v2 found; check USB 3, powered adapter and udev permissions");
     const std::string serial = o.serial.empty() ? context.getDefaultDeviceSerialNumber() : o.serial;
     std::unique_ptr<libfreenect2::PacketPipeline> pipeline;
@@ -168,13 +195,11 @@ int capture(const kinectcam::Options& o) {
     DeviceGuard guard{dev};
     if (o.rgb) dev->setColorFrameListener(&listener);
     if (o.ir || o.depth) dev->setIrAndDepthFrameListener(&listener);
-    Outputs outputs(o);
     if (!dev->startStreams(o.rgb, o.ir || o.depth)) throw std::runtime_error("failed to start Kinect streams");
     guard.started = true;
     std::cout << "Streaming Kinect " << serial << " using " << o.pipeline << "; Ctrl+C to stop\n";
     auto last_frame = std::chrono::steady_clock::now();
-    std::uint64_t frames_sent = 0;
-    while (running && (!o.frames || frames_sent < o.frames)) {
+    while (running && (!o.frames || frames_sent < o.frames) && wanted()) {
         libfreenect2::FrameMap frames;
         if (!listener.waitForNewFrame(frames, 250)) {
             if (std::chrono::steady_clock::now() - last_frame > std::chrono::seconds(5))
@@ -182,6 +207,7 @@ int capture(const kinectcam::Options& o) {
             continue;
         }
         FrameGuard release{listener,frames};
+        if (!running || !wanted()) break;
         const libfreenect2::Frame *rgb = nullptr, *ir = nullptr, *depth = nullptr;
         if (o.rgb) rgb = &checked_frame(frames,libfreenect2::Frame::Color,1920,1080);
         if (o.ir) ir = &checked_frame(frames,libfreenect2::Frame::Ir,512,424);
@@ -192,7 +218,35 @@ int capture(const kinectcam::Options& o) {
         last_frame = std::chrono::steady_clock::now();
         ++frames_sent;
     }
+    // Clear before DeviceGuard stops/closes USB: a client can reopen during
+    // that shutdown, and must never receive the previous session's image.
+    if (o.on_demand) outputs.blank();
     std::cout << "Stopped after " << frames_sent << " frame sets\n";
+}
+int capture(const kinectcam::Options& o) {
+    if (o.list) {
+        libfreenect2::Freenect2 context;
+        const int count=context.enumerateDevices();
+        for (int i=0; i<count; ++i) std::cout << context.getDeviceSerialNumber(i) << '\n';
+        return 0;
+    }
+    Outputs outputs(o);
+    std::uint64_t frames_sent=0;
+    if (!o.on_demand) { stream_session(o,outputs,frames_sent,[]{return true;}); return 0; }
+    outputs.monitor_clients();
+    kinectcam::DemandState demand(std::chrono::milliseconds(o.idle_timeout_ms));
+    auto wanted=[&] { return demand.wants_capture(outputs.has_clients(),std::chrono::steady_clock::now()); };
+    std::cout << "On-demand: sensor idle; waiting for capture clients\n" << std::flush;
+    while (running && (!o.frames || frames_sent<o.frames)) {
+        if (!wanted()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+        std::cout << "Capture client detected; starting sensor\n" << std::flush;
+        stream_session(o,outputs,frames_sent,wanted);
+        outputs.blank();
+        std::cout << "Sensor stopped and closed; loopbacks remain available\n" << std::flush;
+    }
     return 0;
 }
 }

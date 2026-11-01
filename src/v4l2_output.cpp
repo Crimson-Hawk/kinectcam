@@ -13,6 +13,8 @@
 
 namespace kinectcam {
 namespace {
+// v4l2loopback private ABI, also used by its upstream client-usage API.
+constexpr std::uint32_t client_usage_event = V4L2_EVENT_PRIVATE_START + 0x08E00000 + 1;
 int xioctl(int fd, unsigned long request, void* arg) {
     int rc;
     do { rc = ::ioctl(fd, request, arg); } while (rc < 0 && errno == EINTR);
@@ -24,7 +26,7 @@ std::runtime_error error(const std::string& path, const std::string& operation) 
 }
 V4L2Output::V4L2Output(std::string path, std::uint32_t width, std::uint32_t height,
                        std::uint32_t fourcc, std::uint32_t bytes_per_pixel)
-    : path_(std::move(path)), row_bytes_(std::size_t(width) * bytes_per_pixel), height_(height) {
+    : path_(std::move(path)), row_bytes_(std::size_t(width) * bytes_per_pixel), height_(height), fourcc_(fourcc) {
     fd_ = ::open(path_.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC);
     if (fd_ < 0) throw error(path_, "open (run setup-loopback.sh and check video permissions)");
     try {
@@ -104,4 +106,48 @@ void V4L2Output::close() noexcept {
     ::close(fd_); fd_ = -1;
 }
 V4L2Output::~V4L2Output() { close(); }
+void V4L2Output::write_blank() {
+    std::vector<std::uint8_t> black(row_bytes_*height_,0);
+    if (fourcc_ == V4L2_PIX_FMT_YUYV) {
+        for (std::size_t i=0; i<black.size(); i+=2) { black[i]=16; black[i+1]=128; }
+    }
+    // Replace every queued image, including for clients which reopen before
+    // the kernel timeout expires. No previous face survives the idle transition.
+    write_frame(black); // Allocate the producer's file-I/O queue before querying it.
+    std::uint32_t count=0;
+    for (;count<64;++count) {
+        v4l2_buffer buffer{};
+        buffer.type=V4L2_BUF_TYPE_VIDEO_OUTPUT;
+        buffer.memory=V4L2_MEMORY_MMAP;
+        buffer.index=count;
+        if (xioctl(fd_,VIDIOC_QUERYBUF,&buffer)<0) {
+            if (errno==EINVAL && count>0) break;
+            throw error(path_,"query actual output queue for blanking");
+        }
+    }
+    if (count==64) throw std::runtime_error(path_+": unsupported output queue size");
+    for (std::uint32_t i=1;i<count;++i) write_frame(black);
+}
+void V4L2Output::enable_client_monitoring() {
+    v4l2_event_subscription sub{};
+    sub.type = client_usage_event;
+    sub.flags = V4L2_EVENT_SUB_FL_SEND_INITIAL;
+    if (xioctl(fd_,VIDIOC_SUBSCRIBE_EVENT,&sub) < 0)
+        throw error(path_,"on-demand needs v4l2loopback client-usage events (update the module)");
+    monitoring_ = true;
+}
+bool V4L2Output::has_capture_clients() {
+    if (!monitoring_) throw std::logic_error(path_ + ": client monitoring is not enabled");
+    v4l2_event event{};
+    while (xioctl(fd_,VIDIOC_DQEVENT,&event) == 0) {
+        if (event.type == client_usage_event) {
+            std::uint32_t count=0;
+            std::memcpy(&count,event.u.data,sizeof(count));
+            capture_clients_ = count != 0;
+        }
+    }
+    // The V4L2 core returns ENOENT for an empty nonblocking event queue.
+    if (errno != ENOENT && errno != EAGAIN) throw error(path_,"dequeue client-usage event");
+    return capture_clients_;
+}
 }

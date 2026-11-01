@@ -1,5 +1,33 @@
 # Verification on 2026-11-01
 
+## On-demand capture
+
+The service now defaults to `--on-demand`; the standalone CLI remains continuous
+unless that flag is supplied. All **eight CTest suites** pass, including demand
+grace timing, event draining, actual queue-size blanking and synthetic
+idle/wake/idle/wake transitions. Independent review found a queue-size mismatch
+between S_PARM and allocated buffers; QUERYBUF now determines the actual count,
+with a regression test observed failing before the fix. A live test exposed
+ENOENT for empty nonblocking event queues; fixtures reproduce it and the bridge
+now handles both ENOENT and EAGAIN.
+
+After the user stopped the old service, the new bridge ran temporarily against
+the real Kinect and kernel loopback devices. With CPU processing, YUYV IR and all
+three outputs enabled, cold idle did not open a physical capture session. Two
+OpenCV IR capture sessions each read five nonblank frames, with first usable
+frames after **1.295s** and **1.080s**. After each client closed, the bridge stopped
+streams, released USB interfaces and closed the device; no spontaneous wake
+occurred during the subsequent two-second idle checks. It then exited cleanly
+with status 0. No images were saved. Depth-packet-loss warnings remain, as in
+previous continuous tests. This verifies capture shutdown and USB release, not
+electrical power removal or a measured reduction in wall power.
+
+A clean Arch x86_64 package build of the final source passed all eight suites
+and namcap reported no package errors; the full local suite also passed.
+The old root installation was not replaced by the temporary test. Installing the
+updated files and reloading/restarting the service is required to activate the
+new default permanently. Howdy's actual authentication remains untested.
+
 ## GitHub mirror update
 
 AUR's homepage/source and the CI local-source redirect now use

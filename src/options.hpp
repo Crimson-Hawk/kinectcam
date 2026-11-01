@@ -10,6 +10,8 @@ struct Options {
     std::string ir_format = "grey", depth_format = "y16";
     bool rgb = true, ir = true, depth = true;
     bool help = false, list = false, test_pattern = false;
+    bool on_demand = false;
+    std::uint32_t idle_timeout_ms = 1000;
     float ir_gain = 4.0f, ir_gamma = 1.0f, depth_max_mm = 4500.0f;
     std::uint64_t frames = 0;
 };

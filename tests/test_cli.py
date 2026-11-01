@@ -14,6 +14,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(p.returncode, 0)
         self.assertIn('--test-pattern', p.stdout)
         self.assertIn('--ir-gain', p.stdout)
+        self.assertIn('--on-demand', p.stdout)
 
     def test_no_outputs(self):
         p = self.run_cli('--no-rgb', '--no-ir', '--no-depth')
@@ -32,6 +33,8 @@ class CliTests(unittest.TestCase):
             (['--rgb-dev', '/dev/video11'], 'distinct'),
             (['--ir-format', 'rgb'], 'ir-format'),
             (['--depth-format', 'rgb'], 'depth-format'),
+            (['--idle-timeout-ms', 'nan'], 'idle-timeout-ms'),
+            (['--idle-timeout-ms', '60001'], 'idle-timeout-ms'),
         ]:
             with self.subTest(args=args):
                 p = self.run_cli(*args)

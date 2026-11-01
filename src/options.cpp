@@ -42,6 +42,17 @@ Options parse_options(int argc, char** argv) {
             try { o.frames = std::stoull(text); }
             catch (...) { throw std::invalid_argument("--frames is out of range"); }
         }
+        else if (arg == "--idle-timeout-ms") {
+            const auto text = value();
+            std::size_t end = 0;
+            unsigned long n;
+            try { n=std::stoul(text,&end); }
+            catch (...) { throw std::invalid_argument("--idle-timeout-ms requires an integer in 0..60000"); }
+            if (end!=text.size() || n>60000 || !std::all_of(text.begin(),text.end(),[](char c){return c>='0'&&c<='9';}))
+                throw std::invalid_argument("--idle-timeout-ms requires an integer in 0..60000");
+            o.idle_timeout_ms=static_cast<std::uint32_t>(n);
+        }
+        else if (arg == "--on-demand") o.on_demand = true;
         else if (arg == "--no-rgb") o.rgb = false;
         else if (arg == "--no-ir") o.ir = false;
         else if (arg == "--no-depth") o.depth = false;
@@ -97,6 +108,8 @@ void print_usage(std::ostream& out, const char* program) {
         "  --serial SERIAL      Select a sensor\n"
         "  --list               List connected sensor serials and exit\n"
         "  --frames N           Stop after N frame sets (0: unlimited)\n"
+        "  --on-demand          Capture only while loopback clients stream\n"
+        "  --idle-timeout-ms N  Grace after last client (default 1000; 0..60000)\n"
         "  --test-pattern       Synthetic frames instead of USB (testing only)\n"
         "  -h, --help           Show this help\n";
 }

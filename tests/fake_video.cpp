@@ -9,8 +9,10 @@
 #include <cerrno>
 #include <set>
 #include <string>
+#include <map>
+#include <fstream>
 
-namespace { std::set<int> video_fds; }
+namespace { std::set<int> video_fds; std::map<int,int> clients; }
 extern "C" {
 int __real_open(const char*, int, ...);
 int __real_close(int);
@@ -36,7 +38,7 @@ int __wrap_fstat(int fd, struct stat* s) {
     if (rc == 0 && video_fds.count(fd)) { s->st_mode = S_IFCHR; s->st_rdev = static_cast<dev_t>(fd); }
     return rc;
 }
-int __wrap_close(int fd) { video_fds.erase(fd); return __real_close(fd); }
+int __wrap_close(int fd) { video_fds.erase(fd); clients.erase(fd); return __real_close(fd); }
 int __wrap_ioctl(int fd, unsigned long request, ...) {
     va_list ap; va_start(ap,request); void* p = va_arg(ap,void*); va_end(ap);
     if (!video_fds.count(fd)) return __real_ioctl(fd,request,p);
@@ -53,7 +55,22 @@ int __wrap_ioctl(int fd, unsigned long request, ...) {
         std::strcpy(reinterpret_cast<char*>(q->name),"timeout");
     } else if (request == VIDIOC_S_CTRL) {
         if (static_cast<v4l2_control*>(p)->value != 1000) { errno = EINVAL; return -1; }
-    } else if (request != VIDIOC_S_FMT && request != VIDIOC_S_PARM) {
+    } else if (request == VIDIOC_SUBSCRIBE_EVENT) {
+        clients[fd]=-1;
+    } else if (request == VIDIOC_DQEVENT) {
+        int count=0;
+        const char* directory=std::getenv("KINECTCAM_TEST_DIR");
+        std::ifstream state(std::string(directory)+"/clients"); state >> count;
+        if (clients.at(fd)==count) { errno=ENOENT; return -1; }
+        clients[fd]=count;
+        auto* event=static_cast<v4l2_event*>(p);
+        event->type=V4L2_EVENT_PRIVATE_START+0x08E00000+1;
+        std::memcpy(event->u.data,&count,sizeof(count));
+    } else if (request == VIDIOC_S_PARM) {
+        static_cast<v4l2_streamparm*>(p)->parm.output.writebuffers=2;
+    } else if (request == VIDIOC_QUERYBUF) {
+        if (static_cast<v4l2_buffer*>(p)->index>=2) { errno=EINVAL; return -1; }
+    } else if (request != VIDIOC_S_FMT) {
         errno = EINVAL; return -1;
     }
     return 0;

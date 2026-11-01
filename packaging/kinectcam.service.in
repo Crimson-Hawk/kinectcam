@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 Type=simple
 DynamicUser=yes
 SupplementaryGroups=video
-Environment="KINECTCAM_ARGS=--pipeline cpu --ir-format yuyv"
+Environment="KINECTCAM_ARGS=--pipeline cpu --ir-format yuyv --on-demand"
 EnvironmentFile=-@CMAKE_INSTALL_FULL_SYSCONFDIR@/kinectcam.conf
 ExecStartPre=+@CMAKE_INSTALL_FULL_LIBEXECDIR@/kinectcam/setup-loopback.sh
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/kinectcam $KINECTCAM_ARGS
