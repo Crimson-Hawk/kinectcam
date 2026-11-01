@@ -24,9 +24,11 @@ electrical power removal or a measured reduction in wall power.
 
 A clean Arch x86_64 package build of the final source passed all eight suites
 and namcap reported no package errors; the full local suite also passed.
-The old root installation was not replaced by the temporary test. Installing the
-updated files and reloading/restarting the service is required to activate the
-new default permanently. Howdy's actual authentication remains untested.
+The user subsequently installed the updated files and reloaded/restarted the
+service. Its actual arguments include `--on-demand`; startup remained idle.
+A further OpenCV consumer read five nonblank IR frames, first usable frame at
+**1.044s**. The systemd service then stopped and closed the sensor, remaining
+active with zero restarts. Howdy's actual authentication remains untested.
 
 ## GitHub mirror update
 
