@@ -1,5 +1,15 @@
 # Verification on 2026-11-01
 
+## Source uninstall target
+
+All **nine CTest suites** pass. Four uninstall cases exercise real CMake targets
+with spaces in paths, DESTDIR isolation, an install-prefix override, dangling
+symlinks, repeated removal, missing manifests and directory rejection. The tests
+were observed failing before adding the target. A separate production build
+with tests disabled was installed into a temporary DESTDIR: uninstall removed
+all nine installed files and preserved an unlisted `/etc/kinectcam.conf` fixture.
+No host installation or running camera service was removed by these checks.
+
 ## On-demand capture
 
 The service now defaults to `--on-demand`; the standalone CLI remains continuous

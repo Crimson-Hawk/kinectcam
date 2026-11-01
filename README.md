@@ -84,6 +84,27 @@ The USB rules grant the `video` group access to the Kinect, and label-based vide
 rules create the stable aliases. Installation does not enable the service or
 change authentication settings.
 
+### Uninstall a source installation
+
+Keep the build directory and its `install_manifest.txt`. After configuring this
+version, uninstall files recorded by the last install with:
+
+```sh
+sudo systemctl disable --now kinectcam   # if you use the systemd service
+sudo cmake --build build --target uninstall
+sudo systemctl daemon-reload            # on systemd systems
+sudo udevadm control --reload-rules
+```
+
+With the Unix Makefiles generator, `sudo make -C build uninstall` also works.
+The target honors `DESTDIR` for staged installations; pass the same staging root
+used for installation. It preserves unlisted files such as `/etc/kinectcam.conf`,
+leaves directories and dependencies in place, and tolerates files already removed.
+Existing virtual camera devices may remain until reboot. For a package-manager
+installation, use that package manager's removal command instead.
+
+### Run manually
+
 ```sh
 sudo bash setup-loopback.sh
 ./build/kinectcam --list
