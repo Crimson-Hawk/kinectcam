@@ -38,7 +38,7 @@ pacman -U --noconfirm "$work"/libfreenect2/libfreenect2-*.pkg.tar.zst
 
 # Build the exact triggering checkout, even if public master advances mid-job.
 runuser -u builder -- git config --file "$work/source-gitconfig" \
-    "url.file://$work/source.insteadOf" 'https://git.crimsonnet.org/CrimsonHawk/kinectcam.git'
+    "url.file://$work/source.insteadOf" 'https://github.com/Crimson-Hawk/kinectcam.git'
 # makepkg 7.1 deliberately ignores user-global Git configuration. Supply its
 # dedicated configuration file so URL rewriting survives source sanitization.
 runuser -u builder -- env MAKEPKG_GIT_CONFIG="$work/source-gitconfig" \

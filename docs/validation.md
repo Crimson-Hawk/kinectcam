@@ -1,5 +1,21 @@
 # Verification on 2026-11-01
 
+## GitHub mirror update
+
+AUR's homepage/source and the CI local-source redirect now use
+https://github.com/Crimson-Hawk/kinectcam. The master sync workflow and the manual
+AUR workflow use Gitea secret `GH_MIRROR_TOKEN`. The latter requires a successful
+sync of its validated commit before AUR publication.
+
+Seven mirror unit tests exercise real local Git repositories: initial/update,
+no-op, unrelated refs, divergent history, missing credentials, private feature
+commits and temporary askpass credential handling. Annotated tags are explicitly
+excluded even with inherited push.followTags enabled; the regression was observed
+failing before adding --no-follow-tags. The full local suite passes seven CTest
+suites. A clean Arch package build and the publishing container's metadata/scanner
+preparation both passed with the GitHub source URL. Actual GitHub authentication
+and Gitea-runner synchronization require the configured PAT and a live CI run.
+
 ## AUR packaging verification
 
 The new `kinectcam-git` recipe was built in a disposable official Arch base-devel

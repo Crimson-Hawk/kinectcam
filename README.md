@@ -229,9 +229,12 @@ this development session, see [docs/validation.md](docs/validation.md).
 
 ## AUR packaging
 
-The `kinectcam-git` recipe is in `packaging/aur`. The manual Gitea workflow builds
-and tests it on x86_64 before publishing metadata from ARM64. It reads both
-`AUR_SSH_KEY` and `AUR_REPO_URL` from repository secrets. See
+The `kinectcam-git` recipe is in `packaging/aur` and downloads source from
+[the public GitHub mirror](https://github.com/Crimson-Hawk/kinectcam).
+Gitea automatically syncs master to GitHub using `GH_MIRROR_TOKEN`. The manual
+AUR workflow builds/tests on x86_64 and ensures the validated commit is mirrored
+before publishing metadata from ARM64. It reads `AUR_SSH_KEY`, `AUR_REPO_URL`
+and `GH_MIRROR_TOKEN` from Gitea repository secrets. See
 [the publishing guide](docs/aur-publishing.md) for setup and first publication.
 
 ## License

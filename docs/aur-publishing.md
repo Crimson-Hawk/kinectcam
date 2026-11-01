@@ -1,28 +1,30 @@
 # Packaging and manual AUR publication
 
-Source: https://git.crimsonnet.org/CrimsonHawk/kinectcam, branch **master**.
+Public source: https://github.com/Crimson-Hawk/kinectcam, branch **master**.
 Package: **kinectcam-git**, initially x86_64. License: **GPL-3.0-only**.
 
-The AUR stores only the build recipe and metadata. The source stays in public
-Gitea and is downloaded anonymously over HTTPS when users build the package.
-Your SSH development remote remains:
-
-```text
-ssh://gitea@git.crimsonnet.org:58852/CrimsonHawk/kinectcam.git
-```
+The AUR stores only the build recipe and metadata. Development and CI stay on
+your self-hosted Gitea instance; users download source anonymously from the public
+GitHub mirror over HTTPS. Gitea does not need to be reachable by package users.
+Keep your existing private Gitea `origin` remote for development pushes.
 
 ## Repository settings
 
-The existing two **repository secrets** are sufficient:
+Configure these **repository secrets in Gitea**, not GitHub:
 
 | Secret | Value |
 | --- | --- |
 | AUR_SSH_KEY | Complete, unencrypted dedicated AUR private key |
 | AUR_REPO_URL | ssh://aur@aur.archlinux.org/kinectcam-git.git |
+| GH_MIRROR_TOKEN | Fine-grained GitHub PAT for Crimson-Hawk/kinectcam with Contents: Read and write |
 
-Add the corresponding public key to your AUR account. The workflow never needs
-your Gitea SSH key or an additional personal access token. Do not put private
-keys in the checkout. The AUR host key is public and pinned in
+Add the corresponding SSH public key to your AUR account. Limit the GitHub PAT
+to the single destination repository and select an expiration date. No GitHub
+Actions or administration permissions are needed for the current tree, which
+contains Gitea workflows under `.gitea/`, not GitHub workflows under `.github/`.
+If GitHub Actions workflow files are added later, updating them may also require
+the token's Workflows write permission. Do not put tokens or private keys in the
+checkout. The AUR host key is public and pinned in
 `packaging/aur/known_hosts`, verified against https://aur.archlinux.org/.
 
 Enable Gitea Actions and register these runner labels:
@@ -34,19 +36,24 @@ Copying metadata and pushing Git commits is architecture independent. Compiling
 and testing the x86_64 package is done natively on x86_64. The runner labels are
 labels registered in your Gitea runner; they do not provision hosted runners.
 
-## First source push
+## Source sync
 
-The Gitea repository was public and empty when checked during preparation.
-Push this source tree to `master` before running its workflow. From a normal
-checkout, inspect `git status`, commit the source/package/workflow files and push
-to your supplied SSH remote. The Codex workspace's empty read-only `.git` is
-not a usable repository, so no Git commits or remote pushes were made here.
+Push development changes to Gitea `master`. **Sync GitHub mirror** runs after
+each master push and can also be started manually. It scans source/history for
+secrets and then pushes the triggering commit to GitHub `master`. Set
+`GH_MIRROR_TOKEN` before the first run; if it was missing when a push occurred,
+run the sync workflow manually after adding it.
 
-The files to publish with the source include `LICENSE`, `packaging/aur/`,
-`scripts/`, `.gitea/workflows/push-aur.yml` and the existing application/tests.
-Do not commit `build/` or package build artifacts. If this directory has no Git
-history outside the Codex sandbox either, initialize a new repository on master
-and add the remote before your first commit/push.
+GitHub must be public so AUR users can clone it without credentials. Prefer an
+empty destination when setting up the mirror. Only master and its reachable
+history are synchronized; unrelated branches/tags are not published. Commit IDs
+are preserved. Existing history includes the previously committed Gitea URLs;
+moving the source host does not erase them or rewrite history.
+
+The script uses HTTPS with a temporary credential helper reading the PAT from
+the environment. It never embeds the token in a URL or Git configuration. There
+is no force push: if GitHub has diverged, the sync fails for review rather than
+overwriting commits. Avoid making independent commits on GitHub master.
 
 ## Local package build
 
@@ -90,13 +97,17 @@ Run **Actions → Push to AUR → Run workflow** on **master**.
 2. The ARM64 job checks out the same triggering commit. A pinned, checksum-checked
    Gitleaks binary scans source/history. `makepkg` validates committed `.SRCINFO`,
    then generates outgoing metadata with the actual Git-derived package version.
-3. Only the final step receives the two AUR secrets. It validates the destination,
+3. Before AUR publication, the same validated commit is synchronized to GitHub
+   using `GH_MIRROR_TOKEN`. If sync fails, AUR publication stops so the package
+   cannot point at source that was never mirrored.
+4. Only the final step receives the two AUR secrets. It validates the destination,
    creates temporary SSH files outside the checkout, and uses strict host-key
    checking. It clones AUR into a separate temporary directory and commits only
    `PKGBUILD` and `.SRCINFO`. Existing AUR history is preserved; identical metadata
    is a no-op. Failed authentication/network operations stop the job.
 
-There is no push/tag trigger. Running validation locally never publishes. A Git
+The AUR workflow remains manual; only the separate source mirror has an automatic
+master-push trigger. Running validation locally never publishes. A Git
 package does not require an AUR commit for every upstream source commit; users'
 builds fetch master and compute `pkgver()` themselves. Run this workflow when
 you deliberately want to publish/update its packaging metadata.
@@ -110,10 +121,13 @@ outgoing publication use `0.2.0.r<commit-count>.g<short-hash>`.
 - Review and update the pinned libfreenect2 recipe revision in
   `scripts/ci-arch-build.sh` when its AUR packaging changes.
 - Review updates to the pinned checkout action and Gitleaks version/checksums.
+- Rotate `GH_MIRROR_TOKEN` in Gitea when the GitHub PAT expires. Keep the GitHub
+  repository public and treat its master branch as a read-only mirror.
 - If AUR rotates its host key, verify the new key against Arch's published
   fingerprint before changing `packaging/aur/known_hosts`; do not disable checking.
 - A failed concurrent push is left as a failure, without force-pushing. Retry the
   manual workflow after reviewing any intervening AUR changes.
 
 References: [AUR submission guidelines](https://wiki.archlinux.org/title/AUR_submission_guidelines),
-[Gitea Actions differences](https://docs.gitea.com/usage/actions/comparison/).
+[Gitea Actions differences](https://docs.gitea.com/usage/actions/comparison/),
+[GitHub personal access tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
